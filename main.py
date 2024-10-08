@@ -1,8 +1,9 @@
+import argparse
 import csv
 import json
-import os
-import icalendar
 from datetime import datetime, timedelta
+import icalendar
+from uuid import uuid4
 
 
 def csv_to_json(file_path):
@@ -17,7 +18,6 @@ def csv_to_json(file_path):
         current_lesson = None
         current_class = None
         current_teacher = None
-        current_location = None
 
         for row in reader:
             if row[0] == 'Time':
@@ -46,28 +46,36 @@ def csv_to_json(file_path):
     return schedule
 
 
-def json_to_ical(json_data, filename):
-    global start_time_str, end_time_str
+def json_to_ical(json_data, base_date, end_date):
+    global end_time_str, start_time_str
     cal = icalendar.Calendar()
 
-    # Determine if the schedule is for week 2 by checking the filename
-    is_week2 = 'week2' in filename.lower()
+    # Add required PRODID and VERSION properties to the calendar
+    cal.add('prodid', '-//WillBarouch//Timetable//EN')
+    cal.add('version', '2.0')
 
-    # Adjust the start date based on the week
-    base_date = datetime(2024, 7, 22)  # Monday of week 1
+    # Determine if the schedule is for week 2 by checking the filename
+    is_week2 = 'week2' in file_path.lower()
+
     if is_week2:
         base_date += timedelta(weeks=1)  # Offset by one week for week 2
 
+    # Calculate the weekday of the start date (0 is Monday, 1 is Tuesday, ..., 6 is Sunday)
+    start_weekday = base_date.weekday()
+
     day_to_date = {
-        'Monday': base_date,
-        'Tuesday': base_date + timedelta(days=1),
-        'Wednesday': base_date + timedelta(days=2),
-        'Thursday': base_date + timedelta(days=3),
-        'Friday': base_date + timedelta(days=4)
+        'Monday': base_date + timedelta(days=(0 - start_weekday) % 7),
+        'Tuesday': base_date + timedelta(days=(1 - start_weekday) % 7),
+        'Wednesday': base_date + timedelta(days=(2 - start_weekday) % 7),
+        'Thursday': base_date + timedelta(days=(3 - start_weekday) % 7),
+        'Friday': base_date + timedelta(days=(4 - start_weekday) % 7)
     }
 
     for item in json_data:
         event = icalendar.Event()
+
+        event.add('dtstamp', datetime.now())
+        event.add('uid', str(uuid4()))
         event.add('summary', item['Lesson'])
 
         time_range = item['Time'][1:-1]  # remove the square brackets
@@ -85,27 +93,49 @@ def json_to_ical(json_data, filename):
         start_datetime = datetime.combine(date, start_time)
         end_datetime = datetime.combine(date, end_time)
 
+        # Ignore all lessons in week 1 prior to start date
+        if start_datetime < base_date:
+            continue
+
         event.add('dtstart', start_datetime)
         event.add('dtend', end_datetime)
         event.add('location', item['Location'])
 
-        # Add a recurrence rule to repeat the event every second week
-        until_date = base_date + timedelta(weeks=9)  # Two-week interval for four weeks
-        event.add('rrule', {'freq': 'weekly', 'interval': 2, 'until': until_date})
+        event.add('rrule', {'freq': 'weekly', 'interval': 2, 'until': end_date})
 
         cal.add_component(event)
 
-    with open(os.path.join("/home/willbarouch/", filename), 'wb') as f:
-        f.write(cal.to_ical())
+    return cal
 
 
-# Path to the CSV file
-file_path = 'week1.csv'
+parser = argparse.ArgumentParser(description='Process CSV files and convert them to iCal format.')
 
-# Convert and print the JSON data
-schedule_data = csv_to_json(file_path)  # this is now a list of dictionaries
-json_data = json.dumps(schedule_data, indent=4)  # convert to JSON string for printing
-print(json_data)
+# Add arguments to the parser
+input_files = ['week1.csv', 'week2.csv']
+parser.add_argument('-o', '--output', required=True, help='Output iCal file.')
+parser.add_argument('-s', '--start', required=True, help='Start date in YYYY-MM-DD format.')
+parser.add_argument('-e', '--end', required=True, help='End date in YYYY-MM-DD format.')
 
-# Convert the schedule data to iCal format
-json_to_ical(schedule_data, os.path.basename(file_path).replace('.csv', '.ics'))  # pass the list of dictionaries
+# Parse the command line arguments
+args = parser.parse_args()
+
+# Convert the start date to a datetime object
+start_date = datetime.strptime(args.start, '%Y-%m-%d')
+end_date = datetime.strptime(args.end, '%Y-%m-%d')
+
+# Create a Calendar object
+cal = icalendar.Calendar()
+
+for file_path in input_files:
+    # Convert and print the JSON data
+    schedule_data = csv_to_json(file_path)  # this is now a list of dictionaries
+    json_data = json.dumps(schedule_data, indent=4)  # convert to JSON string for printing
+
+    # Convert the schedule data to iCal format and add it to the main calendar
+    cal_temp = json_to_ical(schedule_data, start_date, end_date)
+    for component in cal_temp.subcomponents:
+        cal.add_component(component)
+
+# Write the iCal file
+with open(args.output, 'wb') as f:
+    f.write(cal.to_ical())
