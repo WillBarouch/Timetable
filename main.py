@@ -6,8 +6,8 @@ import icalendar
 from uuid import uuid4
 
 
-def csv_to_json(file_path):
-    with open(file_path, 'r') as file:
+def csv_to_json(csv_path):
+    with open(csv_path, 'r') as file:
         reader = csv.reader(file)
 
         headers = next(reader)
@@ -46,32 +46,32 @@ def csv_to_json(file_path):
     return schedule
 
 
-def json_to_ical(json_data, base_date, end_date):
+def json_to_ical(json_temp, base_date_temp, end_date_temp):
     global end_time_str, start_time_str
-    cal = icalendar.Calendar()
+    temp_cal = icalendar.Calendar()
 
-    # Add required PRODID and VERSION properties to the calendar
-    cal.add('prodid', '-//WillBarouch//Timetable//EN')
-    cal.add('version', '2.0')
+    # Add required PRODID (ProgramID) and VERSION properties to the calendar
+    temp_cal.add('prodid', '-//WillBarouch//Timetable//EN')
+    temp_cal.add('version', '2.0')
 
     # Determine if the schedule is for week 2 by checking the filename
     is_week2 = 'week2' in file_path.lower()
 
     if is_week2:
-        base_date += timedelta(weeks=1)  # Offset by one week for week 2
+        base_date_temp += timedelta(weeks=1)  # Offset by one week for week 2
 
     # Calculate the weekday of the start date (0 is Monday, 1 is Tuesday, ..., 6 is Sunday)
-    start_weekday = base_date.weekday()
+    start_weekday = base_date_temp.weekday()
 
     day_to_date = {
-        'Monday': base_date + timedelta(days=(0 - start_weekday) % 7),
-        'Tuesday': base_date + timedelta(days=(1 - start_weekday) % 7),
-        'Wednesday': base_date + timedelta(days=(2 - start_weekday) % 7),
-        'Thursday': base_date + timedelta(days=(3 - start_weekday) % 7),
-        'Friday': base_date + timedelta(days=(4 - start_weekday) % 7)
+        'Monday': base_date_temp + timedelta(days=(0 - start_weekday) % 7),
+        'Tuesday': base_date_temp + timedelta(days=(1 - start_weekday) % 7),
+        'Wednesday': base_date_temp + timedelta(days=(2 - start_weekday) % 7),
+        'Thursday': base_date_temp + timedelta(days=(3 - start_weekday) % 7),
+        'Friday': base_date_temp + timedelta(days=(4 - start_weekday) % 7)
     }
 
-    for item in json_data:
+    for item in json_temp:
         event = icalendar.Event()
 
         event.add('dtstamp', datetime.now())
@@ -94,18 +94,18 @@ def json_to_ical(json_data, base_date, end_date):
         end_datetime = datetime.combine(date, end_time)
 
         # Ignore all lessons in week 1 prior to start date
-        if start_datetime < base_date:
+        if start_datetime < base_date_temp:
             continue
 
         event.add('dtstart', start_datetime)
         event.add('dtend', end_datetime)
         event.add('location', item['Location'])
 
-        event.add('rrule', {'freq': 'weekly', 'interval': 2, 'until': end_date})
+        event.add('rrule', {'freq': 'weekly', 'interval': 2, 'until': end_date_temp})
 
-        cal.add_component(event)
+        temp_cal.add_component(event)
 
-    return cal
+    return temp_cal
 
 
 parser = argparse.ArgumentParser(description='Process CSV files and convert them to iCal format.')
