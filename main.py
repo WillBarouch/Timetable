@@ -45,9 +45,9 @@ def csv_to_json(csv_path):
 
     return schedule
 
+global end_time_str, start_time_str
 
 def json_to_ical(json_temp, base_date_temp, end_date_temp):
-    global end_time_str, start_time_str
     temp_cal = icalendar.Calendar()
 
     # Add required PRODID (ProgramID) and VERSION properties to the calendar
